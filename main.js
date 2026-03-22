@@ -245,7 +245,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function clearPathForColor(idx) {
         (paths[idx] || []).forEach(pos => {
             const cell = board[pos.row][pos.col];
-            if (cell && !cell.isEndpoint) board[pos.row][pos.col] = null;
+            // Only null-out cells that were laid by THIS color's path.
+            // Leave endpoints (our own or other colors' we passed through) intact.
+            if (cell && !cell.isEndpoint && cell.colorIdx === idx) {
+                board[pos.row][pos.col] = null;
+            }
         });
         paths[idx] = [];
         completedPipes.delete(idx);
@@ -254,7 +258,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function startDrag(row, col) {
         if (!isGameActive || !inBounds(row, col)) return;
         const cell = board[row][col];
-        if (!cell) return;
+        // Only allow starting drag from an endpoint dot, not from mid-path cells
+        if (!cell || !cell.isEndpoint) return;
 
         const idx = cell.colorIdx;
         clearPathForColor(idx);
@@ -269,13 +274,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const last = path[path.length - 1];
         if (last.row === row && last.col === col) return;
 
-        // Allow backtracking
+        // Allow backtracking: dragging back to the previous cell undoes that step
         if (path.length >= 2) {
             const prev = path[path.length - 2];
             if (prev.row === row && prev.col === col) {
                 const removed = path.pop();
                 const cell = board[removed.row][removed.col];
-                if (cell && !cell.isEndpoint) board[removed.row][removed.col] = null;
+                // Only clear if this cell was set by our path (not an endpoint we passed through)
+                if (cell && !cell.isEndpoint && cell.colorIdx === dragging.colorIdx) {
+                    board[removed.row][removed.col] = null;
+                }
                 moveCount++;
                 updateStats();
                 drawBoard();
@@ -286,26 +294,33 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!adjacent(last, { row, col })) return;
 
         const targetCell = board[row][col];
-        // Block if occupied by a different color
-        if (targetCell && !targetCell.isEndpoint) return;
-        // Block if same-color endpoint already in path (can only end there)
-        if (targetCell && targetCell.isEndpoint && targetCell.colorIdx === dragging.colorIdx) {
-            // Only allow if it's the OTHER endpoint (not the one we started from)
-            const startCell = board[path[0].row][path[0].col];
-            if (row === path[0].row && col === path[0].col) return; // can't loop back to start
-        }
-        // Block path from going through a different color's endpoint
-        if (targetCell && targetCell.isEndpoint && targetCell.colorIdx !== dragging.colorIdx) return;
+
+        // Block if occupied by another color's non-endpoint path (crossing lines is forbidden)
+        if (targetCell && !targetCell.isEndpoint && targetCell.colorIdx !== dragging.colorIdx) return;
+
+        // Block if occupied by our own non-endpoint path cell (can't re-enter own path except via backtrack)
+        if (targetCell && !targetCell.isEndpoint && targetCell.colorIdx === dragging.colorIdx) return;
+
+        // Block looping back to our own starting endpoint
+        if (row === path[0].row && col === path[0].col) return;
+
+        // Everything else is allowed:
+        //   - empty cells
+        //   - our matching (destination) endpoint  → auto-completes the pipe
+        //   - other colors' endpoints              → pass through without overwriting
 
         path.push({ row, col });
+
+        // Only mark empty cells; never overwrite endpoints (own or other color)
         if (!targetCell) {
             board[row][col] = { colorIdx: dragging.colorIdx, isEndpoint: false };
         }
+
         moveCount++;
         updateStats();
         drawBoard();
 
-        // Auto-complete if we hit our matching endpoint
+        // Auto-complete when we reach our matching destination endpoint
         if (targetCell && targetCell.isEndpoint && targetCell.colorIdx === dragging.colorIdx) {
             finishDrag();
         }
@@ -314,17 +329,26 @@ document.addEventListener('DOMContentLoaded', () => {
     function finishDrag() {
         if (!dragging) return;
         const path = dragging.path;
-        if (path.length >= 2) {
-            const startCell = board[path[0].row][path[0].col];
-            const endCell   = board[path[path.length - 1].row][path[path.length - 1].col];
-            if (startCell && endCell &&
-                startCell.isEndpoint && endCell.isEndpoint &&
-                startCell.colorIdx === dragging.colorIdx &&
-                endCell.colorIdx   === dragging.colorIdx &&
-                !(path[0].row === path[path.length-1].row && path[0].col === path[path.length-1].col)) {
-                completedPipes.add(dragging.colorIdx);
-            }
+        const idx  = dragging.colorIdx;
+
+        // A pipe is complete only when both ends are matching endpoints of the same color
+        // and they are different cells (no zero-length loop).
+        const startCell = board[path[0].row][path[0].col];
+        const endCell   = board[path[path.length - 1].row][path[path.length - 1].col];
+        const isComplete = path.length >= 2 &&
+            startCell && endCell &&
+            startCell.isEndpoint && endCell.isEndpoint &&
+            startCell.colorIdx === idx && endCell.colorIdx === idx &&
+            !(path[0].row === path[path.length - 1].row && path[0].col === path[path.length - 1].col);
+
+        if (isComplete) {
+            completedPipes.add(idx);
+        } else {
+            // Player released without completing the pipe — erase the partial path
+            // so they can start fresh from the endpoint.
+            clearPathForColor(idx);
         }
+
         dragging = null;
         updateStats();
         drawBoard();
