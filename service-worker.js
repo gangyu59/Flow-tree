@@ -1,5 +1,5 @@
 // Cache version — bump this string to force all clients to update
-const CACHE_NAME = 'flow-tree-v3';
+const CACHE_NAME = 'flow-tree-v4';
 
 const ASSETS = [
     './',

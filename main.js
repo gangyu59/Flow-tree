@@ -1,439 +1,406 @@
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('game-canvas');
     const ctx = canvas.getContext('2d');
-    const startButton = document.getElementById('start-button');
-    const difficultySlider = document.getElementById('difficulty-slider');
-    const difficultyLabel = document.getElementById('difficulty-label');
-    const messageDiv = document.getElementById('message');
-    const moveCounterEl = document.getElementById('move-counter');
-    const pipeCounterEl = document.getElementById('pipe-counter');
-    const rulesButton = document.getElementById('rules-button');
-    const modal = document.getElementById('rules-modal');
-    const closeButton = document.querySelector('.close-button');
+    const startButton    = document.getElementById('start-button');
+    const diffSlider     = document.getElementById('difficulty-slider');
+    const diffLabel      = document.getElementById('difficulty-label');
+    const messageDiv     = document.getElementById('message');
+    const moveCounterEl  = document.getElementById('move-counter');
+    const pipeCounterEl  = document.getElementById('pipe-counter');
+    const rulesButton    = document.getElementById('rules-button');
+    const modal          = document.getElementById('rules-modal');
+    const closeButton    = document.querySelector('.close-button');
 
-    // ── Config ──────────────────────────────────────────────────────────────
-    const BOARD_SIZES  = [5, 6, 7, 8, 9];
-    const DIFFICULTIES = ['超易', '较易', '中等', '较难', '超难'];
+    // ── Constants ────────────────────────────────────────────────────────────
+    const DIFFICULTIES  = ['超易', '较易', '中等', '较难', '超难'];
+    const LINE_W        = 10;      // drawn line width (px)
+    const NODE_R        = 18;      // node radius (px)
+    const SNAP_R        = 30;      // snap-to-node radius (px)
+    const MIN_STEP      = 5;       // min px between recorded path points
+    const OTHER_GAP     = LINE_W + 2;  // min distance between different-color lines
 
-    // Vibrant palette – each entry is [fillColor, glowColor]
     const PALETTE = [
-        ['#ff4757', '#ff6b81'],   // red
-        ['#2ed573', '#7bed9f'],   // green
-        ['#1e90ff', '#70a1ff'],   // blue
-        ['#ffa502', '#ffc048'],   // orange
-        ['#a29bfe', '#d7d0fc'],   // purple
-        ['#fd79a8', '#fdacc5'],   // pink
-        ['#00cec9', '#81ecec'],   // teal
-        ['#fdcb6e', '#ffeaa7'],   // yellow
-        ['#e17055', '#fab1a0'],   // salmon
-        ['#6c5ce7', '#a29bfe'],   // indigo
+        ['#ff4757', '#ff6b81'],
+        ['#2ed573', '#7bed9f'],
+        ['#1e90ff', '#70a1ff'],
+        ['#ffa502', '#ffc048'],
+        ['#a29bfe', '#d7d0fc'],
+        ['#fd79a8', '#fdacc5'],
+        ['#00cec9', '#81ecec'],
+        ['#fdcb6e', '#ffeaa7'],
     ];
 
-    // Pre-built solvable puzzles for each difficulty level
-    // Format: { pairs: [[r1,c1,r2,c2], ...] }  (0-indexed)
+    // Puzzle node positions as fractions [x, y] of canvas size.
+    // Each entry in pairs is [[x1,y1],[x2,y2]].
+    // 3 variants per difficulty level.
     const PUZZLES = {
-        // 5×5  (5 pairs, all cells filled)
-        5: [
-            { pairs: [[0,0,4,0],[0,2,2,4],[0,4,3,4],[1,1,3,3],[2,0,4,2]] },
-            { pairs: [[0,0,0,4],[1,0,4,0],[1,4,4,4],[2,1,2,3],[3,1,3,3]] },
-            { pairs: [[0,0,2,2],[0,4,4,4],[1,1,3,3],[2,0,4,0],[0,2,4,2]] },
+        1: [  // 3 pairs – easy
+            { pairs: [[[0.20,0.20],[0.80,0.80]], [[0.80,0.20],[0.20,0.80]], [[0.50,0.10],[0.50,0.90]]] },
+            { pairs: [[[0.15,0.50],[0.85,0.50]], [[0.50,0.15],[0.50,0.85]], [[0.25,0.20],[0.75,0.80]]] },
+            { pairs: [[[0.25,0.10],[0.75,0.90]], [[0.75,0.10],[0.25,0.90]], [[0.10,0.50],[0.90,0.50]]] },
         ],
-        // 6×6  (6 pairs)
-        6: [
-            { pairs: [[0,0,5,0],[0,2,0,5],[1,1,4,1],[2,2,5,5],[3,3,5,3],[1,4,3,5]] },
-            { pairs: [[0,0,0,5],[5,0,5,5],[1,1,4,4],[2,2,3,3],[1,4,4,1],[2,0,3,5]] },
-            { pairs: [[0,0,3,0],[0,5,3,5],[1,2,4,2],[2,1,5,4],[0,3,5,1],[1,4,4,3]] },
+        2: [  // 4 pairs
+            { pairs: [[[0.15,0.15],[0.85,0.85]], [[0.85,0.15],[0.15,0.85]], [[0.50,0.10],[0.50,0.90]], [[0.10,0.50],[0.90,0.50]]] },
+            { pairs: [[[0.20,0.10],[0.80,0.90]], [[0.80,0.10],[0.20,0.90]], [[0.10,0.35],[0.90,0.65]], [[0.10,0.65],[0.90,0.35]]] },
+            { pairs: [[[0.15,0.20],[0.85,0.80]], [[0.85,0.20],[0.15,0.80]], [[0.35,0.10],[0.65,0.90]], [[0.50,0.15],[0.50,0.85]]] },
         ],
-        // 7×7  (7 pairs)
-        7: [
-            { pairs: [[0,0,6,0],[0,6,6,6],[0,3,3,6],[1,1,5,5],[2,2,4,4],[1,5,4,1],[3,0,6,3]] },
-            { pairs: [[0,0,0,6],[6,0,6,6],[1,1,5,5],[2,2,4,4],[3,3,3,6],[0,3,3,0],[1,4,4,2]] },
-            { pairs: [[0,0,4,0],[0,6,4,6],[1,2,5,4],[2,1,5,5],[3,3,6,3],[0,3,3,6],[1,5,5,1]] },
+        3: [  // 5 pairs
+            { pairs: [[[0.15,0.15],[0.85,0.85]], [[0.85,0.15],[0.15,0.85]], [[0.50,0.10],[0.50,0.90]], [[0.10,0.50],[0.90,0.50]], [[0.30,0.30],[0.70,0.70]]] },
+            { pairs: [[[0.10,0.20],[0.90,0.80]], [[0.90,0.20],[0.10,0.80]], [[0.50,0.10],[0.50,0.90]], [[0.25,0.50],[0.75,0.15]], [[0.25,0.85],[0.75,0.50]]] },
+            { pairs: [[[0.20,0.15],[0.80,0.85]], [[0.80,0.15],[0.20,0.85]], [[0.10,0.40],[0.90,0.60]], [[0.10,0.60],[0.90,0.40]], [[0.50,0.15],[0.50,0.85]]] },
         ],
-        // 8×8  (8 pairs)
-        8: [
-            { pairs: [[0,0,7,0],[0,7,7,7],[0,3,3,7],[1,1,6,6],[2,2,5,5],[3,3,4,4],[1,5,5,1],[0,5,4,0]] },
-            { pairs: [[0,0,0,7],[7,0,7,7],[1,1,6,6],[2,2,5,5],[3,3,4,4],[0,4,4,0],[1,5,6,2],[2,4,5,3]] },
-            { pairs: [[0,0,5,0],[0,7,5,7],[1,2,4,5],[2,1,5,6],[3,3,6,3],[0,4,4,0],[1,6,6,1],[3,5,7,4]] },
+        4: [  // 6 pairs
+            { pairs: [[[0.10,0.10],[0.90,0.90]], [[0.90,0.10],[0.10,0.90]], [[0.50,0.10],[0.50,0.90]], [[0.10,0.50],[0.90,0.50]], [[0.30,0.15],[0.70,0.85]], [[0.30,0.85],[0.70,0.15]]] },
+            { pairs: [[[0.15,0.15],[0.85,0.85]], [[0.85,0.15],[0.15,0.85]], [[0.50,0.08],[0.50,0.92]], [[0.08,0.50],[0.92,0.50]], [[0.25,0.25],[0.75,0.75]], [[0.30,0.50],[0.70,0.50]]] },
+            { pairs: [[[0.10,0.20],[0.90,0.80]], [[0.90,0.20],[0.10,0.80]], [[0.50,0.10],[0.50,0.90]], [[0.20,0.50],[0.80,0.50]], [[0.15,0.35],[0.85,0.65]], [[0.15,0.65],[0.85,0.35]]] },
         ],
-        // 9×9  (9 pairs)
-        9: [
-            { pairs: [[0,0,8,0],[0,8,8,8],[0,4,4,8],[1,1,7,7],[2,2,6,6],[3,3,5,5],[4,0,8,4],[1,6,6,1],[0,6,3,8]] },
-            { pairs: [[0,0,0,8],[8,0,8,8],[1,1,7,7],[2,2,6,6],[3,3,5,5],[4,4,4,8],[0,4,4,0],[1,5,5,2],[2,4,6,3]] },
-            { pairs: [[0,0,6,0],[0,8,6,8],[1,2,5,6],[2,1,6,7],[3,3,7,3],[0,5,4,0],[1,7,7,1],[4,4,8,4],[3,6,8,5]] },
+        5: [  // 7 pairs
+            { pairs: [[[0.10,0.10],[0.90,0.90]], [[0.90,0.10],[0.10,0.90]], [[0.50,0.08],[0.50,0.92]], [[0.08,0.50],[0.92,0.50]], [[0.30,0.20],[0.70,0.80]], [[0.30,0.80],[0.70,0.20]], [[0.50,0.30],[0.50,0.70]]] },
+            { pairs: [[[0.12,0.12],[0.88,0.88]], [[0.88,0.12],[0.12,0.88]], [[0.50,0.08],[0.50,0.92]], [[0.08,0.50],[0.92,0.50]], [[0.25,0.30],[0.75,0.70]], [[0.75,0.30],[0.25,0.70]], [[0.50,0.25],[0.50,0.75]]] },
+            { pairs: [[[0.10,0.15],[0.90,0.85]], [[0.90,0.15],[0.10,0.85]], [[0.50,0.08],[0.50,0.92]], [[0.08,0.40],[0.92,0.60]], [[0.08,0.60],[0.92,0.40]], [[0.30,0.15],[0.70,0.85]], [[0.50,0.30],[0.50,0.70]]] },
         ],
     };
 
     // ── State ────────────────────────────────────────────────────────────────
-    let boardSize    = BOARD_SIZES[0];
-    let board        = [];       // board[row][col] = { colorIdx, isEndpoint } | null
-    let paths        = {};       // colorIdx → array of {row,col}
-    let completedPipes = new Set();
-    let moveCount    = 0;
-    let isGameActive = false;
-    let dragging     = null;     // { colorIdx, path[] }
-    let cellSize     = 0;
+    let nodes     = [];    // { id, colorIdx, fx, fy, x, y }
+    let lines     = {};    // colorIdx → { points:[{x,y},...], complete:bool }
+    let dragging  = null;  // { colorIdx, startNodeId }
+    let doneCount = 0;
+    let totalPairs = 0;
+    let strokeCount = 0;   // completed strokes (stat shown as 步数)
+    let canvasSize = 0;
     let currentPuzzle = null;
+    let isGameActive = false;
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-    function pickPuzzle(size) {
-        const pool = PUZZLES[size];
-        return pool[Math.floor(Math.random() * pool.length)];
-    }
-
+    // ── Canvas sizing ────────────────────────────────────────────────────────
     function resizeCanvas() {
-        const side = Math.min(window.innerWidth * 0.92, window.innerHeight * 0.48, 420);
-        canvas.width  = side;
-        canvas.height = side;
-        cellSize = side / boardSize;
+        canvasSize = Math.min(window.innerWidth * 0.92, window.innerHeight * 0.50, 460);
+        canvas.width  = canvasSize;
+        canvas.height = canvasSize;
+        if (currentPuzzle) placeNodes();
         drawBoard();
     }
 
-    // ── Board init ────────────────────────────────────────────────────────────
-    function initializeBoard() {
-        board = Array.from({ length: boardSize }, () => Array(boardSize).fill(null));
-        paths = {};
-        completedPipes = new Set();
-
-        currentPuzzle = pickPuzzle(boardSize);
-        currentPuzzle.pairs.forEach(([r1, c1, r2, c2], idx) => {
-            board[r1][c1] = { colorIdx: idx, isEndpoint: true };
-            board[r2][c2] = { colorIdx: idx, isEndpoint: true };
-            paths[idx] = [];
+    function placeNodes() {
+        nodes.forEach(n => {
+            n.x = n.fx * canvasSize;
+            n.y = n.fy * canvasSize;
         });
+    }
+
+    // ── Game init ─────────────────────────────────────────────────────────────
+    function initGame() {
+        const level = parseInt(diffSlider.value);
+        const pool  = PUZZLES[level];
+        currentPuzzle = pool[Math.floor(Math.random() * pool.length)];
+
+        nodes = [];
+        lines = {};
+        doneCount  = 0;
+        strokeCount = 0;
+        totalPairs = currentPuzzle.pairs.length;
+
+        currentPuzzle.pairs.forEach((pair, cidx) => {
+            const [p1, p2] = pair;
+            nodes.push({ id: cidx * 2,     colorIdx: cidx, fx: p1[0], fy: p1[1], x: p1[0] * canvasSize, y: p1[1] * canvasSize });
+            nodes.push({ id: cidx * 2 + 1, colorIdx: cidx, fx: p2[0], fy: p2[1], x: p2[0] * canvasSize, y: p2[1] * canvasSize });
+            lines[cidx] = { points: [], complete: false };
+        });
+    }
+
+    // ── Geometry helpers ──────────────────────────────────────────────────────
+    function dist(a, b) {
+        return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+    }
+
+    function cross2D(o, a, b) {
+        return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+    }
+
+    // Strict crossing: ignores collinear / endpoint-touching cases
+    function segsCross(p1, p2, p3, p4) {
+        const d1 = cross2D(p3, p4, p1);
+        const d2 = cross2D(p3, p4, p2);
+        const d3 = cross2D(p1, p2, p3);
+        const d4 = cross2D(p1, p2, p4);
+        return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+               ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+    }
+
+    function ptSegDistSq(p, a, b) {
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq === 0) return (p.x - a.x) ** 2 + (p.y - a.y) ** 2;
+        const t  = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
+        const nx = a.x + t * dx, ny = a.y + t * dy;
+        return (p.x - nx) ** 2 + (p.y - ny) ** 2;
+    }
+
+    function segMinDist(p1, p2, p3, p4) {
+        if (segsCross(p1, p2, p3, p4)) return 0;
+        return Math.sqrt(Math.min(
+            ptSegDistSq(p1, p3, p4),
+            ptSegDistSq(p2, p3, p4),
+            ptSegDistSq(p3, p1, p2),
+            ptSegDistSq(p4, p1, p2),
+        ));
+    }
+
+    // ── Collision detection ───────────────────────────────────────────────────
+    // Returns true if the segment newA→newB would cross or overlap an existing line.
+    function wouldCollide(newA, newB) {
+        if (dist(newA, newB) < 2) return false;
+
+        for (const [cidxStr, line] of Object.entries(lines)) {
+            const cidx = parseInt(cidxStr);
+            const pts  = line.points;
+            if (pts.length < 2) continue;
+
+            const isSelf = dragging && cidx === dragging.colorIdx;
+
+            // For own line, skip the last several segments to avoid false positives
+            // right at the drawing tip (adjacent segments share an endpoint).
+            // For other-color lines, check all segments.
+            const skipTail = isSelf ? 6 : 0;
+            const limit    = pts.length - 1 - skipTail;
+
+            for (let i = 0; i < limit; i++) {
+                const segA = pts[i], segB = pts[i + 1];
+                if (dist(segA, segB) < 1) continue;
+
+                if (isSelf) {
+                    // Own line: only block strict crossing (allows tight curves)
+                    if (segsCross(newA, newB, segA, segB)) return true;
+                } else {
+                    // Other color: block crossing AND close approach (visual overlap)
+                    if (segMinDist(newA, newB, segA, segB) < OTHER_GAP) return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    // ── Canvas coordinate helper ──────────────────────────────────────────────
+    function toCanvas(clientX, clientY) {
+        const rect  = canvas.getBoundingClientRect();
+        const scaleX = canvas.width  / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+    }
+
+    function clampToCanvas(p) {
+        const margin = NODE_R;
+        return {
+            x: Math.max(margin, Math.min(canvasSize - margin, p.x)),
+            y: Math.max(margin, Math.min(canvasSize - margin, p.y)),
+        };
+    }
+
+    function nearestNode(pos, colorIdx = null) {
+        let best = null, bestDist = SNAP_R;
+        nodes.forEach(n => {
+            if (colorIdx !== null && n.colorIdx !== colorIdx) return;
+            const d = dist(pos, n);
+            if (d < bestDist) { bestDist = d; best = n; }
+        });
+        return best;
+    }
+
+    // ── Drag handlers ─────────────────────────────────────────────────────────
+    function onStart(clientX, clientY) {
+        if (!isGameActive) return;
+        const pos  = toCanvas(clientX, clientY);
+        const node = nearestNode(pos);
+        if (!node) return;
+
+        const cidx = node.colorIdx;
+        // Clear previous line for this color (whether complete or partial)
+        if (lines[cidx].complete) doneCount--;
+        lines[cidx] = { points: [{ x: node.x, y: node.y }], complete: false };
+        dragging = { colorIdx: cidx, startNodeId: node.id };
+        updateStats();
+        drawBoard();
+    }
+
+    function onMove(clientX, clientY) {
+        if (!dragging) return;
+        const raw  = toCanvas(clientX, clientY);
+        const pos  = clampToCanvas(raw);
+        const line = lines[dragging.colorIdx];
+        const last = line.points[line.points.length - 1];
+
+        if (dist(pos, last) < MIN_STEP) return;
+
+        // Check if we've reached the destination node (snap-to-complete)
+        const destNode = nodes.find(
+            n => n.colorIdx === dragging.colorIdx && n.id !== dragging.startNodeId
+        );
+        if (destNode && dist(pos, destNode) < SNAP_R) {
+            const snapPt = { x: destNode.x, y: destNode.y };
+            // Final segment collision check before snapping
+            if (!wouldCollide(last, snapPt)) {
+                line.points.push(snapPt);
+                line.complete = true;
+                doneCount++;
+                strokeCount++;
+                dragging = null;
+                updateStats();
+                drawBoard();
+                checkWin();
+            }
+            return;
+        }
+
+        // Normal extension: check for collision, canvas boundary already clamped
+        if (wouldCollide(last, pos)) return;  // blocked — don't extend
+
+        line.points.push(pos);
+        drawBoard();
+    }
+
+    function onEnd() {
+        if (!dragging) return;
+        const line = lines[dragging.colorIdx];
+        // Erase incomplete path so player starts fresh from the node
+        if (!line.complete) {
+            lines[dragging.colorIdx] = { points: [], complete: false };
+        }
+        dragging = null;
+        updateStats();
+        drawBoard();
     }
 
     // ── Drawing ───────────────────────────────────────────────────────────────
     function drawBoard() {
-        if (!canvas.width) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawBackground();
-        drawPaths();
-        drawGrid();
-        drawEndpoints();
+        drawBg();
+        drawAllLines();
+        drawNodes();
     }
 
-    function drawBackground() {
+    function drawBg() {
         ctx.fillStyle = '#0d1b2a';
         ctx.beginPath();
-        roundRect(ctx, 0, 0, canvas.width, canvas.height, 12);
+        rrect(0, 0, canvas.width, canvas.height, 12);
         ctx.fill();
     }
 
-    function roundRect(c, x, y, w, h, r) {
-        c.beginPath();
-        c.moveTo(x + r, y);
-        c.lineTo(x + w - r, y);
-        c.arcTo(x + w, y, x + w, y + r, r);
-        c.lineTo(x + w, y + h - r);
-        c.arcTo(x + w, y + h, x + w - r, y + h, r);
-        c.lineTo(x + r, y + h);
-        c.arcTo(x, y + h, x, y + h - r, r);
-        c.lineTo(x, y + r);
-        c.arcTo(x, y, x + r, y, r);
-        c.closePath();
+    function rrect(x, y, w, h, r) {
+        ctx.moveTo(x + r, y);
+        ctx.lineTo(x + w - r, y); ctx.arcTo(x + w, y,     x + w, y + r,     r);
+        ctx.lineTo(x + w, y + h - r); ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+        ctx.lineTo(x + r, y + h); ctx.arcTo(x,     y + h, x,     y + h - r, r);
+        ctx.lineTo(x,     y + r); ctx.arcTo(x,     y,     x + r, y,         r);
+        ctx.closePath();
     }
 
-    function drawGrid() {
-        ctx.strokeStyle = 'rgba(255,255,255,0.07)';
-        ctx.lineWidth = 1;
-        for (let i = 0; i <= boardSize; i++) {
+    function drawAllLines() {
+        for (const [cidxStr, line] of Object.entries(lines)) {
+            const pts = line.points;
+            if (pts.length < 2) continue;
+            const cidx = parseInt(cidxStr);
+            const [fill, glow] = PALETTE[cidx % PALETTE.length];
+
+            ctx.save();
+            ctx.shadowColor = glow;
+            ctx.shadowBlur  = 10;
+            ctx.strokeStyle = fill;
+            ctx.lineWidth   = LINE_W;
+            ctx.lineCap     = 'round';
+            ctx.lineJoin    = 'round';
+
+            // Draw as smooth quadratic bezier spline
             ctx.beginPath();
-            ctx.moveTo(i * cellSize, 0);
-            ctx.lineTo(i * cellSize, canvas.height);
+            ctx.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length - 1; i++) {
+                const mx = (pts[i].x + pts[i + 1].x) / 2;
+                const my = (pts[i].y + pts[i + 1].y) / 2;
+                ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+            }
+            ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
             ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, i * cellSize);
-            ctx.lineTo(canvas.width, i * cellSize);
-            ctx.stroke();
+            ctx.restore();
         }
     }
 
-    function drawPaths() {
-        Object.entries(paths).forEach(([idxStr, path]) => {
-            if (path.length < 2) return;
-            const idx = parseInt(idxStr);
-            const [fill, glow] = PALETTE[idx % PALETTE.length];
+    function drawNodes() {
+        nodes.forEach(n => {
+            const [fill, glow] = PALETTE[n.colorIdx % PALETTE.length];
+            const cx = n.x, cy = n.y, r = NODE_R;
 
             ctx.save();
-            ctx.shadowColor  = glow;
-            ctx.shadowBlur   = 10;
-            ctx.strokeStyle  = fill;
-            ctx.lineWidth    = cellSize * 0.42;
-            ctx.lineCap      = 'round';
-            ctx.lineJoin     = 'round';
+            ctx.shadowColor = glow;
+            ctx.shadowBlur  = 18;
 
+            // Outer halo
             ctx.beginPath();
-            path.forEach((pos, i) => {
-                const x = pos.col * cellSize + cellSize / 2;
-                const y = pos.row * cellSize + cellSize / 2;
-                if (i === 0) ctx.moveTo(x, y);
-                else ctx.lineTo(x, y);
-            });
-            ctx.stroke();
+            ctx.arc(cx, cy, r + 4, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.12)';
+            ctx.fill();
+
+            // Main dot
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fillStyle = fill;
+            ctx.fill();
+
+            // Shine
+            ctx.beginPath();
+            ctx.arc(cx - r * 0.28, cy - r * 0.28, r * 0.30, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.fill();
+
             ctx.restore();
         });
     }
 
-    function drawEndpoints() {
-        for (let row = 0; row < boardSize; row++) {
-            for (let col = 0; col < boardSize; col++) {
-                const cell = board[row][col];
-                if (!cell || !cell.isEndpoint) continue;
-
-                const [fill, glow] = PALETTE[cell.colorIdx % PALETTE.length];
-                const cx = col * cellSize + cellSize / 2;
-                const cy = row * cellSize + cellSize / 2;
-                const r  = cellSize * 0.30;
-
-                ctx.save();
-                ctx.shadowColor = glow;
-                ctx.shadowBlur  = 16;
-
-                // Outer ring
-                ctx.beginPath();
-                ctx.arc(cx, cy, r + 3, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255,255,255,0.15)';
-                ctx.fill();
-
-                // Main dot
-                ctx.beginPath();
-                ctx.arc(cx, cy, r, 0, Math.PI * 2);
-                ctx.fillStyle = fill;
-                ctx.fill();
-
-                // Shine
-                ctx.beginPath();
-                ctx.arc(cx - r * 0.28, cy - r * 0.28, r * 0.32, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255,255,255,0.45)';
-                ctx.fill();
-
-                ctx.restore();
-            }
-        }
-    }
-
-    // ── Input helpers ─────────────────────────────────────────────────────────
-    function canvasXY(clientX, clientY) {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width  / rect.width;
-        const scaleY = canvas.height / rect.height;
-        return {
-            col: Math.floor((clientX - rect.left) * scaleX / cellSize),
-            row: Math.floor((clientY - rect.top)  * scaleY / cellSize),
-        };
-    }
-
-    function inBounds(row, col) {
-        return row >= 0 && row < boardSize && col >= 0 && col < boardSize;
-    }
-
-    function adjacent(a, b) {
-        return Math.abs(a.row - b.row) + Math.abs(a.col - b.col) === 1;
-    }
-
-    function endpointsForColor(idx) {
-        const eps = [];
-        for (let r = 0; r < boardSize; r++)
-            for (let c = 0; c < boardSize; c++)
-                if (board[r][c] && board[r][c].isEndpoint && board[r][c].colorIdx === idx)
-                    eps.push({ row: r, col: c });
-        return eps;
-    }
-
-    // ── Path drawing logic ────────────────────────────────────────────────────
-    function clearPathForColor(idx) {
-        (paths[idx] || []).forEach(pos => {
-            const cell = board[pos.row][pos.col];
-            // Only null-out cells that were laid by THIS color's path.
-            // Leave endpoints (our own or other colors' we passed through) intact.
-            if (cell && !cell.isEndpoint && cell.colorIdx === idx) {
-                board[pos.row][pos.col] = null;
-            }
-        });
-        paths[idx] = [];
-        completedPipes.delete(idx);
-    }
-
-    function startDrag(row, col) {
-        if (!isGameActive || !inBounds(row, col)) return;
-        const cell = board[row][col];
-        // Only allow starting drag from an endpoint dot, not from mid-path cells
-        if (!cell || !cell.isEndpoint) return;
-
-        const idx = cell.colorIdx;
-        clearPathForColor(idx);
-        dragging = { colorIdx: idx, path: [{ row, col }] };
-        paths[idx] = dragging.path;
-    }
-
-    function extendDrag(row, col) {
-        if (!dragging || !inBounds(row, col)) return;
-
-        const path = dragging.path;
-        const last = path[path.length - 1];
-        if (last.row === row && last.col === col) return;
-
-        // Allow backtracking: dragging back to the previous cell undoes that step
-        if (path.length >= 2) {
-            const prev = path[path.length - 2];
-            if (prev.row === row && prev.col === col) {
-                const removed = path.pop();
-                const cell = board[removed.row][removed.col];
-                // Only clear if this cell was set by our path (not an endpoint we passed through)
-                if (cell && !cell.isEndpoint && cell.colorIdx === dragging.colorIdx) {
-                    board[removed.row][removed.col] = null;
-                }
-                moveCount++;
-                updateStats();
-                drawBoard();
-                return;
-            }
-        }
-
-        if (!adjacent(last, { row, col })) return;
-
-        const targetCell = board[row][col];
-
-        // Block if occupied by another color's non-endpoint path (crossing lines is forbidden)
-        if (targetCell && !targetCell.isEndpoint && targetCell.colorIdx !== dragging.colorIdx) return;
-
-        // Block if occupied by our own non-endpoint path cell (can't re-enter own path except via backtrack)
-        if (targetCell && !targetCell.isEndpoint && targetCell.colorIdx === dragging.colorIdx) return;
-
-        // Block looping back to our own starting endpoint
-        if (row === path[0].row && col === path[0].col) return;
-
-        // Everything else is allowed:
-        //   - empty cells
-        //   - our matching (destination) endpoint  → auto-completes the pipe
-        //   - other colors' endpoints              → pass through without overwriting
-
-        path.push({ row, col });
-
-        // Only mark empty cells; never overwrite endpoints (own or other color)
-        if (!targetCell) {
-            board[row][col] = { colorIdx: dragging.colorIdx, isEndpoint: false };
-        }
-
-        moveCount++;
-        updateStats();
-        drawBoard();
-
-        // Auto-complete when we reach our matching destination endpoint
-        if (targetCell && targetCell.isEndpoint && targetCell.colorIdx === dragging.colorIdx) {
-            finishDrag();
-        }
-    }
-
-    function finishDrag() {
-        if (!dragging) return;
-        const path = dragging.path;
-        const idx  = dragging.colorIdx;
-
-        // A pipe is complete only when both ends are matching endpoints of the same color
-        // and they are different cells (no zero-length loop).
-        const startCell = board[path[0].row][path[0].col];
-        const endCell   = board[path[path.length - 1].row][path[path.length - 1].col];
-        const isComplete = path.length >= 2 &&
-            startCell && endCell &&
-            startCell.isEndpoint && endCell.isEndpoint &&
-            startCell.colorIdx === idx && endCell.colorIdx === idx &&
-            !(path[0].row === path[path.length - 1].row && path[0].col === path[path.length - 1].col);
-
-        if (isComplete) {
-            completedPipes.add(idx);
-        } else {
-            // Player released without completing the pipe — erase the partial path
-            // so they can start fresh from the endpoint.
-            clearPathForColor(idx);
-        }
-
-        dragging = null;
-        updateStats();
-        drawBoard();
-        checkWin();
-    }
-
-    // ── Game state ────────────────────────────────────────────────────────────
+    // ── Stats & win ───────────────────────────────────────────────────────────
     function updateStats() {
-        moveCounterEl.textContent = moveCount;
-        pipeCounterEl.textContent = completedPipes.size + ' / ' + currentPuzzle.pairs.length;
-    }
-
-    function isBoardFull() {
-        for (let r = 0; r < boardSize; r++)
-            for (let c = 0; c < boardSize; c++)
-                if (!board[r][c]) return false;
-        return true;
+        moveCounterEl.textContent = strokeCount;
+        pipeCounterEl.textContent = doneCount + ' / ' + totalPairs;
     }
 
     function checkWin() {
-        if (completedPipes.size === currentPuzzle.pairs.length && isBoardFull()) {
+        if (doneCount === totalPairs) {
             isGameActive = false;
             messageDiv.className = 'win';
-            messageDiv.textContent = `🎉 恭喜！共用 ${moveCount} 步完成！`;
+            messageDiv.textContent = `🎉 恭喜！${strokeCount} 笔完成！`;
         }
     }
 
-    // ── Events ────────────────────────────────────────────────────────────────
-    canvas.addEventListener('mousedown', e => {
-        const { row, col } = canvasXY(e.clientX, e.clientY);
-        startDrag(row, col);
-    });
-    canvas.addEventListener('mousemove', e => {
-        const { row, col } = canvasXY(e.clientX, e.clientY);
-        extendDrag(row, col);
-    });
-    canvas.addEventListener('mouseup', () => finishDrag());
-    canvas.addEventListener('mouseleave', () => finishDrag());
+    // ── Event wiring ──────────────────────────────────────────────────────────
+    canvas.addEventListener('mousedown',  e => onStart(e.clientX, e.clientY));
+    canvas.addEventListener('mousemove',  e => onMove(e.clientX, e.clientY));
+    canvas.addEventListener('mouseup',    () => onEnd());
+    canvas.addEventListener('mouseleave', () => onEnd());
 
-    canvas.addEventListener('touchstart', e => {
-        e.preventDefault();
-        const t = e.touches[0];
-        const { row, col } = canvasXY(t.clientX, t.clientY);
-        startDrag(row, col);
-    }, { passive: false });
-    canvas.addEventListener('touchmove', e => {
-        e.preventDefault();
-        const t = e.touches[0];
-        const { row, col } = canvasXY(t.clientX, t.clientY);
-        extendDrag(row, col);
-    }, { passive: false });
-    canvas.addEventListener('touchend', e => {
-        e.preventDefault();
-        finishDrag();
-    }, { passive: false });
+    canvas.addEventListener('touchstart', e => { e.preventDefault(); onStart(e.touches[0].clientX, e.touches[0].clientY); }, { passive: false });
+    canvas.addEventListener('touchmove',  e => { e.preventDefault(); onMove(e.touches[0].clientX,  e.touches[0].clientY);  }, { passive: false });
+    canvas.addEventListener('touchend',   e => { e.preventDefault(); onEnd(); }, { passive: false });
 
-    difficultySlider.addEventListener('input', e => {
-        const level = parseInt(e.target.value) - 1;
-        difficultyLabel.textContent = DIFFICULTIES[level];
-        boardSize = BOARD_SIZES[level];
-        cellSize  = canvas.width / boardSize;
+    diffSlider.addEventListener('input', e => {
+        diffLabel.textContent = DIFFICULTIES[parseInt(e.target.value) - 1];
     });
 
     startButton.addEventListener('click', () => {
-        const level = parseInt(difficultySlider.value) - 1;
-        boardSize = BOARD_SIZES[level];
-        moveCount = 0;
         isGameActive = true;
         messageDiv.textContent = '';
         messageDiv.className = '';
-        initializeBoard();
         resizeCanvas();
+        initGame();
+        drawBoard();
         updateStats();
     });
 
-    rulesButton.addEventListener('click', () => modal.classList.add('active'));
-    closeButton.addEventListener('click', () => modal.classList.remove('active'));
+    rulesButton.addEventListener('click',  () => modal.classList.add('active'));
+    closeButton.addEventListener('click',  () => modal.classList.remove('active'));
     window.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('active'); });
     window.addEventListener('resize', resizeCanvas);
 
     // ── Boot ──────────────────────────────────────────────────────────────────
-    // Set difficulty label to match default slider value (1 = 超易)
-    difficultyLabel.textContent = DIFFICULTIES[0];
-    boardSize = BOARD_SIZES[0];
-    initializeBoard();
+    diffLabel.textContent = DIFFICULTIES[0];
     resizeCanvas();
+    initGame();
+    drawBoard();
     updateStats();
 });

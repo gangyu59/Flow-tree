@@ -17,7 +17,7 @@
 </head>
 <body>
     <h1>Flow Tree</h1>
-    <div id="subtitle">连接彩色节点，填满棋盘</div>
+    <div id="subtitle">自由画线，连接所有同色节点</div>
 
     <div id="game-container">
         <canvas id="game-canvas"></canvas>
@@ -38,7 +38,7 @@
 
     <div id="stats-row">
         <div class="stat-box">
-            <div class="stat-label">步数</div>
+            <div class="stat-label">笔数</div>
             <div class="stat-value" id="move-counter">0</div>
         </div>
         <div class="stat-box">
@@ -53,13 +53,14 @@
         <div class="modal-content">
             <span class="close-button">&times;</span>
             <h2>游戏规则</h2>
-            <p>连接所有同色节点，让线条填满整个棋盘！</p>
+            <p>在画布上自由画线，连接所有同色节点！</p>
             <ul>
-                <li>点击并拖动来连接同色节点</li>
-                <li>路径只能水平或垂直延伸</li>
-                <li>所有格子必须被填满</li>
-                <li>路径不能交叉</li>
-                <li>连接匹配颜色才算完成一条线</li>
+                <li>从一个节点开始拖动画线</li>
+                <li>拖到同色节点即可完成连接</li>
+                <li>线条可以任意弯曲，不限方向</li>
+                <li>线条不能穿出画框边界</li>
+                <li>不同颜色的线条不能交叉或重叠</li>
+                <li>中途松手将清除未完成的线</li>
             </ul>
         </div>
     </div>
